@@ -69,17 +69,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return response
 
     def get_user_watch_history(self) -> dict:
-        """ВАШ КОД ТУТ
-
-        Для каждого переданного user_id API должен возвращать историю оценок, которые ставил этот user_id в виде
-
-        [
-            {"movie_id": 4119470, "rating": 4, "timestamp": "2019-09-03 10:00:00"},
-            {"movie_id": 5691170, "rating": 2, "timestamp": "2019-09-05 13:23:00"},
-            {"movie_id": 3341191, "rating": 5, "timestamp": "2019-09-08 16:40:00"}
-        ]
-        """
-        return dict()
+        """ВАШ КОД ТУТ"""
+        user_id = self.path.split('/')[-1]
+        user_profile = postgres_interactor.get_sql_result(f"""
+            SELECT movieid, rating, timestamp FROM movie.ratings WHERE userid = {user_id};
+        """)
+        response = []
+        for x, y, z in user_profile:
+            response.append({"movie_id": x, "rating": y, "timestamp": z})
+        return response
 
     def do_GET(self):
         # заголовки ответа
