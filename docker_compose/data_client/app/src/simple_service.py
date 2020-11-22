@@ -69,14 +69,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return response
 
     def get_user_watch_history(self) -> dict:
-        """ВАШ КОД ТУТ"""
-        user_id = self.path.split('/')[-1]
-        user_profile = postgres_interactor.get_sql_result(f"""
-            SELECT movieid, rating, timestamp FROM movie.ratings WHERE userid = {user_id};
-        """)
-        response = []
-        for x, y, z in user_profile:
-            response.append({"movie_id": x, "rating": y, "timestamp": z})
+        """ВАШ КОД ТУТ
+
+        Для каждого переданного user_id API должен возвращать историю оценок, которые ставил этот user_id в виде
+        [
+            {"movie_id": 4119470, "rating": 4, "timestamp": "2019-09-03 10:00:00"},
+            {"movie_id": 5691170, "rating": 2, "timestamp": "2019-09-05 13:23:00"},
+            {"movie_id": 3341191, "rating": 5, "timestamp": "2019-09-08 16:40:00"}
+        ]
+        """
+        user_id = self.path.split('/')[-1].split('?')[0]
+        logging.info(f'Поступил запрос по пользователю user_id={user_id}')
+        redis_profile_key = f'watchhistory:{user_id}'
+        # проверяем наличие объекта в Redis-кеше
+        if redis_interactor.is_cached(redis_profile_key):
+            logging.info(f'Профиль пользователя user_id={user_id} присутствует в кеше')
+            response = redis_interactor.get_data(redis_profile_key)
+        # если ключ отcутствует в кеше - выполняем "тяжёлый" SQL-запрос в Postgres
+        else:
+            logging.info(f'Профиль пользователя user_id={user_id} отсутствует в кеше, выполняем запрос к Postgres')
+            user_profile = [None, None]  # [num_rating, avg_rating]
+            try:
+                user_profile = postgres_interactor.get_sql_result(f"""
+                    SELECT movieid, rating, timestamp FROM movie.ratings WHERE userid = {user_id};
+                """)
+            except Exception as e:
+                logging.info(f'Произошла ошибка запроса к Postgres:\n{e}')
+            response = []
+            for x, y, z in user_profile:
+                response.append({"movie_id": x, "rating": y, "timestamp": z})
+            logging.info(f'Сохраняем профиль пользователя user_id={user_id} в Redis-кеш')
+            redis_interactor.set_data(redis_profile_key, response)
         return response
 
     def do_GET(self):
