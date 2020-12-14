@@ -16,6 +16,7 @@ from http import HTTPStatus
 import psycopg2
 from msgpack import packb, unpackb
 from redis import Redis
+from pymongo import MongoClient
 
 # файл, куда посыпятся логи модели
 FORMAT = '%(asctime)-15s %(message)s'
@@ -40,6 +41,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Реализуем API /user/watchhistory/user_id
         elif self.path.startswith('/user/watchhistory'):
             response = self.get_user_watch_history()
+        # Реализуем API /movie/genres/movie_id
+        elif self.path.startswith('/movie/genres'):
+            response = self.get_genres()
         return response
 
     def get_user_profile(self) -> dict:
@@ -102,12 +106,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             redis_interactor.set_data(redis_profile_key, response)
         return response
 
+    def get_genres(self) -> dict:
+        movie_id = self.path.split('/')[-1]
+        logging.info(f'Поступил запрос по контенту movie_id={movie_id}')
+        doc = {"movie_id": f"{movie_id}"},  {"tag_name": 1, "_id": 0}
+        curs = mongo_interactor.get_data(doc)
+        response = list()
+        for c in curs:
+            response.append(c['tag_name'])
+        return {'genres': response}
+
     def do_GET(self):
         # заголовки ответа
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps(self.get_response()).encode())
+
+
+class MongoStorage:
+    def __init__(self):
+        mongo_conf = {
+            'host': os.environ['APP_MONGO_HOST'],
+            'port': int(os.environ['APP_MONGO_PORT'])
+        }
+        storage = MongoClient(**mongo_conf)
+        self.mongo_recsys_storage = storage.get_database("movie")
+
+    def get_data(self, doc):
+        collection = self.mongo_recsys_storage.get_collection("tags")
+        mongo_doc = collection.find(doc[0], doc[1])
+        return mongo_doc
 
 
 class PostgresStorage:
@@ -168,6 +197,8 @@ postgres_interactor = PostgresStorage()
 logging.info('Инициализирован класс для работы с Postgres')
 redis_interactor = RedisStorage()
 logging.info('Инициализирован класс для работы с Redis')
+mongo_interactor = MongoStorage()
+logging.info('Инициализирован класс для работы с Mongo')
 if os.path.exists(log_file_name):
     os.chmod(log_file_name, 0o0777)
 
